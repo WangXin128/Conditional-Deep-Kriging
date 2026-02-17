@@ -65,7 +65,6 @@ python train.py --data_dir ./data --save_dir ./checkpoints --epochs 200
 
 Please check `train.py` for the exact options.
 
-```
 
 ## Notes on Reproducibility
 - Set random seeds in your scripts for deterministic behavior if needed.
