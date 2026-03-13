@@ -64,10 +64,16 @@ python train.py --data_dir ./data --save_dir ./checkpoints --epochs 200
 
 Please check `train.py` for the exact options.
 
+## Hardware Requirements
+Our experiments were conducted on the following hardware configuration:
+- CPU: AMD Ryzen 9 7940HX  
+- GPU: NVIDIA RTX 4060 Laptop (8GB)  
+- RAM: 16GB DDR5  
 
 ## Notes on Reproducibility
 - Set random seeds in your scripts for deterministic behavior if needed.
 - Make sure the dataset split strategy used in training matches the paper setting.
+- https://open.canada.ca/data/en/dataset/06d87b8d-2149-4b9d-9737-e5531fea1d45
 
 ## License
 This project is released under the license in the LICENSE file.
