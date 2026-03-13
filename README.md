@@ -19,6 +19,7 @@ This repository provides the code to generate synthetic data, train the CDK mode
 ├── dataset.py             # dataset loading / sampling utilities
 ├── model.py               # CDK model (encoder + kernel generator + solver)
 ├── train.py               # training entry (self-supervised)
+├── util.py                # util package
 └── visualize.py           # visualization / qualitative comparison
 ```
 
@@ -40,8 +41,7 @@ Run the script below to generate synthetic anomaly fields and sparse flight-line
 ```bash
 python data_generate.py
 ```
-
-If your script supports arguments, typical ones might include output directory, grid size, line spacing, and point spacing, e.g.
+The script supports arguments, typical parameters include output directory, grid size, line spacing, and point spacing, e.g.
 
 ```bash
 python data_generate.py --out_dir ./data --grid_size 128 --alpha 15 --beta 4
@@ -56,7 +56,7 @@ Train the model using only the observed points (no dense ground-truth labels req
 python train.py
 ```
 
-If your training script supports config-like arguments, you can use something like:
+The training script supports config-like arguments, you can use something like:
 
 ```bash
 python train.py --data_dir ./data --save_dir ./checkpoints --epochs 200
