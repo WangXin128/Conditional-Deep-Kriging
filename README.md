@@ -31,7 +31,6 @@ conda env create -f environment.yml
 conda activate cdk
 ```
 
-If your environment name in `environment.yml` is not `cdk`, replace it with the actual name.
 
 ## Quick Start
 
