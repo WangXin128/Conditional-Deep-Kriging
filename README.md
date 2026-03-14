@@ -41,12 +41,12 @@ conda activate cdk
 
 ### 1. Synthetic Dataset Experiments
 #### 1) Generate Synthetic Data
-Run the script below to generate synthetic anomaly fields and sparse flight-line observations.
+Run the script below to generate synthetic anomaly fields and sparse flight-line observations. Running the script directly generates the dataset used in the paper, which is saved to the magnetic_dataset_zscore directory by default.
 
 ```bash
 python data_generate.py
 ```
-Running the script directly generates the dataset used in the paper, which is saved to the magnetic_dataset_zscore directory by default. Additionally, the script supports customizable arguments, such as output directory, grid size, line spacing, and point spacing, e.g.
+Additionally, the script supports customizable arguments, such as output directory, grid size, line spacing, and point spacing, e.g.
 
 ```bash
 python data_generate.py --out_dir ./data --grid_size 128 --alpha 15 --beta 4
