@@ -14,13 +14,17 @@ This repository provides the code to generate synthetic data, train the CDK mode
 .
 ├── LICENSE
 ├── README.md
-├── environment.yml        # conda environment specification
-├── data_generate.py       # synthetic data generation
-├── dataset.py             # dataset loading / sampling utilities
-├── model.py               # CDK model (encoder + kernel generator + solver)
-├── train.py               # training entry (self-supervised)
-├── util.py                # util package
-└── visualize.py           # visualization / qualitative comparison
+├── environment.yml                 # conda environment specification
+├── Kluane_Lake_West_mag_res.grd    # public datasets used in the paper
+├── data_generate.py                # synthetic data generation
+├── simulate_flightline_real.py.py  # preprocessing of public datasets
+├── dataset.py                      # synthetic dataset loading / sampling utilities
+├── dataset_real.py                 # public dataset loading
+├── model.py                        # CDK model (encoder + kernel generator + solver)
+├── train.py                        # training and prediction on synthetic datasets (self-supervised)
+├── train_real.py                   # Training and prediction on public datasets
+├── util.py                         # util package
+└── visualize.py                    # visualization
 ```
 
 ## Requirements
@@ -35,13 +39,14 @@ conda activate cdk
 
 ## Quick Start
 
-### 1) Generate Synthetic Data
+### 1. Synthetic Dataset Experiments
+#### 1) Generate Synthetic Data
 Run the script below to generate synthetic anomaly fields and sparse flight-line observations.
 
 ```bash
 python data_generate.py
 ```
-The script supports arguments, typical parameters include output directory, grid size, line spacing, and point spacing, e.g.
+Running the script directly generates the dataset used in the paper, which is saved to the magnetic_dataset_zscore directory by default. Additionally, the script supports customizable arguments, such as output directory, grid size, line spacing, and point spacing, e.g.
 
 ```bash
 python data_generate.py --out_dir ./data --grid_size 128 --alpha 15 --beta 4
@@ -49,20 +54,33 @@ python data_generate.py --out_dir ./data --grid_size 128 --alpha 15 --beta 4
 
 Please check `data_generate.py` for the available arguments.
 
-### 2) Train (Self-supervised)
-Train the model using only the observed points (no dense ground-truth labels required for training).
+#### 2) Train (Self-supervised)
+Train the model using only the observed points (no dense ground-truth labels required for training) and output the interpolation results.
+Change the --data_dir argument to switch datasets., you can use something like:
 
 ```bash
-python train.py
+python train.py --data_dir "magnetic_dataset_zscore/exp_A_alphaFixed_beta_dense"
+python train.py --data_dir "magnetic_dataset_zscore/exp_A_alphaFixed_beta_medium"
+python train.py --data_dir "magnetic_dataset_zscore/exp_A_alphaFixed_beta_sparse"
+python train.py --data_dir "magnetic_dataset_zscore/exp_B_betaFixed_alpha_dense"
+python train.py --data_dir "magnetic_dataset_zscore/exp_B_betaFixed_alpha_sparse"
+```
+### 2. Public Dataset Experiments
+
+#### 1) Data Preprocessing
+Before training, data preprocessing is required for Kluane_Lake_West_mag_res.grd.
+```bash
+python simulate_flightline_real.py
 ```
 
-The training script supports config-like arguments, you can use something like:
+#### 2) Train
+Change the --data_dir argument to switch datasets., you can use something like:
 
 ```bash
-python train.py --data_dir ./data --save_dir ./checkpoints --epochs 200
+python train_real.py --data_dir "real_dataset_zscore/real_dense"
+python train_real.py --data_dir "real_dataset_zscore/real_medium"
+python train_real.py --data_dir "real_dataset_zscore/real_sparse"
 ```
-
-Please check `train.py` for the exact options.
 
 ## Hardware Requirements
 Our experiments were conducted on the following hardware configuration:
