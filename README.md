@@ -91,7 +91,7 @@ Our experiments were conducted on the following hardware configuration:
 ## Notes on Reproducibility
 - Set random seeds in your scripts for deterministic behavior if needed.
 - Make sure the dataset split strategy used in training matches the paper setting.
-- https://open.canada.ca/data/en/dataset/06d87b8d-2149-4b9d-9737-e5531fea1d45
+- The public dataset is available at: https://open.canada.ca/data/en/dataset/06d87b8d-2149-4b9d-9737-e5531fea1d45
 
 ## License
 This project is released under the license in the LICENSE file.
