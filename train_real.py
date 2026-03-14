@@ -1,14 +1,14 @@
 import argparse
 import os
 import time
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
 from model import CDK
-from dataset import MagneticNpyDataset, normalize_coords_index_to_unit, make_full_grid_coords
+from dataset_real import MagneticRealDataset, normalize_coords_index_to_unit, make_full_grid_coords
 from utils import (
     set_seed,
     pick_ctx_tgt_indices,
@@ -49,8 +49,10 @@ def build_vertical_line_state_from_coords_idx(coords_idx: torch.Tensor, min_line
     groups = []
     for xv in uniq_x.tolist():
         idx = torch.nonzero(x == xv, as_tuple=False).view(-1)
-        if idx.numel() >= int(min_line_pts): groups.append(idx)
-    if len(groups) < 2: return None
+        if idx.numel() >= int(min_line_pts):
+            groups.append(idx)
+    if len(groups) < 2:
+        return None
     return {"groups": groups}
 
 
@@ -61,11 +63,14 @@ def pick_ctx_tgt_indices_line_holdout(coords_all, line_state, n_ctx, n_tgt, devi
     all_idx = torch.arange(N, device=device)
     groups = line_state["groups"]
     G = len(groups)
+
     k_lines = int(max(1, round(G * float(holdout_line_ratio))))
     k_lines = min(k_lines, G)
     perm = torch.randperm(G, device=device)
     sel_g = perm[:k_lines].tolist()
+
     hold_pool = torch.cat([groups[g].to(device) for g in sel_g], dim=0).unique()
+
     n_tgt_line = int(round(float(n_tgt) * float(line_tgt_ratio)))
     n_tgt_line = min(n_tgt_line, int(hold_pool.numel()))
     if n_tgt_line > 0:
@@ -73,9 +78,12 @@ def pick_ctx_tgt_indices_line_holdout(coords_all, line_state, n_ctx, n_tgt, devi
         tgt_line = hold_pool[perm2[:n_tgt_line]]
     else:
         tgt_line = torch.empty((0,), dtype=torch.long, device=device)
+
     mask_rem = torch.ones((N,), dtype=torch.bool, device=device)
-    if tgt_line.numel() > 0: mask_rem[tgt_line] = False
+    if tgt_line.numel() > 0:
+        mask_rem[tgt_line] = False
     rem_pool = all_idx[mask_rem]
+
     n_tgt_rest = int(n_tgt) - int(tgt_line.numel())
     n_tgt_rest = max(0, min(n_tgt_rest, int(rem_pool.numel())))
     if n_tgt_rest > 0:
@@ -84,43 +92,63 @@ def pick_ctx_tgt_indices_line_holdout(coords_all, line_state, n_ctx, n_tgt, devi
         tgt = torch.cat([tgt_line, tgt_rest], dim=0)
     else:
         tgt = tgt_line
+
     tgt = tgt.unique()
+
     mask_ctx = torch.ones((N,), dtype=torch.bool, device=device)
-    if tgt.numel() > 0: mask_ctx[tgt] = False
+    if tgt.numel() > 0:
+        mask_ctx[tgt] = False
     ctx_pool = all_idx[mask_ctx]
+
     n_ctx_eff = int(min(int(n_ctx), int(ctx_pool.numel())))
     if n_ctx_eff <= 0:
-        ctx = all_idx[: min(N, max(1, n_ctx))].clone()
+        ctx = all_idx[:min(N, max(1, n_ctx))].clone()
     else:
         perm4 = torch.randperm(ctx_pool.numel(), device=device)
         ctx = ctx_pool[perm4[:n_ctx_eff]]
+
     return ctx.unsqueeze(0), tgt.unsqueeze(0)
 
 
 def compute_n_ctx_tgt(N: int, ctx_frac: float, tgt_frac: float) -> Tuple[int, int]:
     s = max(1e-12, float(ctx_frac) + float(tgt_frac))
-    ctx_frac = float(ctx_frac) / s;
+    ctx_frac = float(ctx_frac) / s
     tgt_frac = float(tgt_frac) / s
-    n_tgt = int(round(N * tgt_frac));
+
+    n_tgt = int(round(N * tgt_frac))
     n_tgt = max(1, min(n_tgt, N - 1))
-    n_ctx = int(round(N * ctx_frac));
+
+    n_ctx = int(round(N * ctx_frac))
     n_ctx = max(1, min(n_ctx, N - n_tgt))
-    if n_ctx + n_tgt > N: n_tgt = max(1, N - n_ctx)
-    if n_ctx + n_tgt > N: n_ctx = max(1, N - n_tgt)
+
+    if n_ctx + n_tgt > N:
+        n_tgt = max(1, N - n_ctx)
+    if n_ctx + n_tgt > N:
+        n_ctx = max(1, N - n_tgt)
+
     return n_ctx, n_tgt
 
 
 def sample_ctx_tgt(coords_all, N, args, device, line_state=None):
     n_ctx, n_tgt = compute_n_ctx_tgt(N, args.ctx_frac, args.tgt_frac)
+
     if args.split == "line":
         if line_state is None:
-            return pick_ctx_tgt_indices_sparse_weighted(coords_all, n_ctx, n_tgt, device, args.hard_tgt_ratio,
-                                                        args.hard_pool_ratio, args.weight_power)
-        return pick_ctx_tgt_indices_line_holdout(coords_all, line_state, n_ctx, n_tgt, device, args.holdout_line_ratio,
-                                                 args.line_tgt_ratio)
+            return pick_ctx_tgt_indices_sparse_weighted(
+                coords_all, n_ctx, n_tgt, device,
+                args.hard_tgt_ratio, args.hard_pool_ratio, args.weight_power
+            )
+        return pick_ctx_tgt_indices_line_holdout(
+            coords_all, line_state, n_ctx, n_tgt, device,
+            args.holdout_line_ratio, args.line_tgt_ratio
+        )
+
     if args.split == "weighted":
-        return pick_ctx_tgt_indices_sparse_weighted(coords_all, n_ctx, n_tgt, device, args.hard_tgt_ratio,
-                                                    args.hard_pool_ratio, args.weight_power)
+        return pick_ctx_tgt_indices_sparse_weighted(
+            coords_all, n_ctx, n_tgt, device,
+            args.hard_tgt_ratio, args.hard_pool_ratio, args.weight_power
+        )
+
     ctx_i, tgt_i = pick_ctx_tgt_indices(N, n_ctx, n_tgt, device=device)
     return ctx_i.unsqueeze(0), tgt_i.unsqueeze(0)
 
@@ -142,13 +170,15 @@ def calculate_metrics_np(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float,
 
     abs_y_true_flat = np.abs(y_true_flat)
     threshold = np.percentile(abs_y_true_flat, 5)
-    if threshold < 1e-9: threshold = 1e-9
+    if threshold < 1e-9:
+        threshold = 1e-9
 
     valid_mask = abs_y_true_flat > threshold
 
     if np.sum(valid_mask) > 0:
         v_mape = float(
-            np.mean(np.abs((y_true_flat[valid_mask] - y_pred_flat[valid_mask]) / y_true_flat[valid_mask])) * 100.0)
+            np.mean(np.abs((y_true_flat[valid_mask] - y_pred_flat[valid_mask]) / y_true_flat[valid_mask])) * 100.0
+        )
     else:
         v_mape = 0.0
 
@@ -163,50 +193,43 @@ def denorm_zscore(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> tor
 @torch.no_grad()
 def predict_and_evaluate(model, values_z, coords_idx, gt_z, grid_coords, device, args, mean, std):
     """
-    MODIFIED: Now also returns the learned eta value.
+    与你当前 train.py 保持一致：返回指标、预测时间、gt/pred、eta
     """
     model.eval()
 
-    # 1. 准备预测
     coords_unit = normalize_coords_index_to_unit(coords_idx.float(), grid_size=gt_z.shape[-1])
     q = grid_coords.unsqueeze(0).to(device)
 
-    # Context 采样 (全图预测通常使用所有观测点作为 context)
     N = values_z.shape[1]
     n_ctx = min(args.eval_ctx_points, N)
     coords_ctx = coords_unit[:, :n_ctx, :]
     values_ctx = values_z[:, :n_ctx]
 
     t0 = time.time()
-
-    # 关键修改: 请求返回 aux 变量
     pred_flat_z, aux = model(coords_ctx, values_ctx, q, return_aux=True)
     pred_time = time.time() - t0
 
-    # 从 aux 中提取 eta
-    final_eta = aux['eta'].mean().item()
+    final_eta = aux["eta"].mean().item()
 
     pred_2d_z = pred_flat_z.view(gt_z.shape[-2], gt_z.shape[-1])
 
-    # 2. 反归一化到物理空间
     pred_phys = denorm_zscore(pred_2d_z, mean.squeeze(), std.squeeze())
     gt_phys = denorm_zscore(gt_z.squeeze(), mean.squeeze(), std.squeeze())
 
     pred_np = pred_phys.squeeze().cpu().numpy()
     gt_np = gt_phys.squeeze().cpu().numpy()
 
-    # 3. 计算物理指标
     mae, rmse, mape = calculate_metrics_np(gt_np, pred_np)
+    print("DEBUG:", gt_np.shape, pred_np.shape)
 
-    # 返回所有结果，包括 eta
     return mae, rmse, mape, pred_time, gt_np, pred_np, final_eta
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", type=str, default="magnetic_dataset_zscore/exp_B_betaFixed_alpha_sparse")
+    parser.add_argument("--data_dir", type=str, default="real_dataset_zscore/real_dense")
     parser.add_argument("--split_data", type=str, default="test")
-    parser.add_argument("--grid_size", type=int, default=128)
+    parser.add_argument("--grid_size", type=int, default=100)
 
     parser.add_argument("--samples", type=int, default=100)
     parser.add_argument("--steps", type=int, default=800)
@@ -245,25 +268,31 @@ def main():
     parser.add_argument("--fixed_beta", type=float, default=0.5)
 
     parser.add_argument("--eval_ctx_points", type=int, default=1000)
-    parser.add_argument("--out_dir", type=str, default="test_zscore")
+    parser.add_argument("--out_dir", type=str, default="")
     parser.add_argument("--vis_count", type=int, default=20)
 
     args = parser.parse_args()
 
     dataset_name = os.path.basename(os.path.normpath(args.data_dir))
-    args.out_dir = os.path.join("result", f"test_{dataset_name}")
+    if not args.out_dir:
+        args.out_dir = os.path.join("result_real", f"test_{dataset_name}")
 
     set_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() and args.device.startswith("cuda") else "cpu")
     os.makedirs(args.out_dir, exist_ok=True)
 
-    ds = MagneticNpyDataset(args.data_dir, split=args.split_data, grid_size=args.grid_size, load_minmax=True)
+    ds = MagneticRealDataset(
+        args.data_dir,
+        split=args.split_data,
+        grid_size=args.grid_size,
+        load_minmax=True
+    )
     loader = DataLoader(ds, batch_size=1, shuffle=False)
     grid_coords = make_full_grid_coords(grid_size=args.grid_size, device=device)
 
     n_total = min(args.samples, len(ds))
     all_results = []
-    sum_metrics = np.zeros(3)  # mae, rmse, mape
+    sum_metrics = np.zeros(3)
     sum_time = 0.0
     sum_eta = 0.0
 
@@ -292,7 +321,7 @@ def main():
         model = build_model(args, device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-        best_loss = float('inf')
+        best_loss = float("inf")
         best_state = None
         bad_steps = 0
 
@@ -308,13 +337,15 @@ def main():
 
             try:
                 pred = model(c_ctx, v_ctx, c_tgt)
-                loss = (pred - v_tgt).abs().mean()  # Loss is in Z-space (stable)
-            except:
-                loss = torch.tensor(float('nan'))
+                loss = (pred - v_tgt).abs().mean()
+            except Exception:
+                loss = torch.tensor(float("nan"), device=device)
 
             if not torch.isfinite(loss):
-                if best_state: model.load_state_dict(best_state)
-                for pg in optimizer.param_groups: pg['lr'] *= 0.5
+                if best_state is not None:
+                    model.load_state_dict(best_state)
+                for pg in optimizer.param_groups:
+                    pg["lr"] *= 0.5
                 bad_steps += 1
                 continue
 
@@ -325,13 +356,16 @@ def main():
 
             if loss.item() < best_loss:
                 best_loss = loss.item()
-                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
                 bad_steps = 0
             else:
                 bad_steps += 1
-            if args.patience > 0 and bad_steps >= args.patience: break
 
-        if best_state: model.load_state_dict(best_state)
+            if args.patience > 0 and bad_steps >= args.patience:
+                break
+
+        if best_state is not None:
+            model.load_state_dict(best_state)
 
         # ---- Evaluation (Output Physical Metrics) ----
         try:
@@ -350,40 +384,41 @@ def main():
         sum_time += t_pred
         sum_eta += final_eta
 
-        print(
-            f"Sample {si}: MAE={mae:.4f} nT, RMSE={rmse:.4f} nT, MAPE={mape:.2f}%")
+        print(f"Sample {si}: MAE={mae:.4f} nT, RMSE={rmse:.4f} nT, MAPE={mape:.2f}%")
 
         all_results.append({
             "id": si,
-            "mae": mae, "rmse": rmse, "mape": mape, #"time": t_pred, "eta": final_eta,
+            "mae": mae,
+            "rmse": rmse,
+            "mape": mape,
             "gt": gt_np,
             "pred": pred_np,
             "input_vals": vals_np,
             "coords": coords_np
         })
 
-    # Summary
-    avg = sum_metrics / max(1, n_total)
+    valid_count = max(1, len(all_results))
+    avg = sum_metrics / valid_count
 
     print(f"\n==== Summary ====")
-    print(f"Samples: {n_total}")
+    print(f"Samples: {len(all_results)}")
     print(f"Average: MAE={avg[0]:.4f} nT, RMSE={avg[1]:.4f} nT, MAPE={avg[2]:.2f}%")
 
     txt_path = os.path.join(args.out_dir, "summary.txt")
-    with open(txt_path, "w") as f:
-        f.write(f"==== Instance Optimization Summary (Z-Score) ====\n")
-        f.write(
-            f"AVG_MAE={avg[0]:.6f}\nAVG_RMSE={avg[1]:.6f}\nAVG_MAPE={avg[2]:.6f}\n")
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write("==== Instance Optimization Summary (Real Flightline Z-Score) ====\n")
+        f.write(f"AVG_MAE={avg[0]:.6f}\nAVG_RMSE={avg[1]:.6f}\nAVG_MAPE={avg[2]:.6f}\n")
         f.write("id\tMAE\tRMSE\tMAPE\n")
         for r in all_results:
             f.write(f"{r['id']}\t{r['mae']:.6f}\t{r['rmse']:.6f}\t{r['mape']:.6f}\n")
     print(f"\nSaved results to {txt_path}")
 
     # Visualize
-    if args.vis_count > 0:
+    if args.vis_count > 0 and len(all_results) > 0:
         try:
             from visualize import Visualizer
-            vis = Visualizer(save_dir=args.out_dir, sample_id=34)
+            safe_sample_id = min(34, len(all_results) - 1)
+            vis = Visualizer(save_dir=args.out_dir, sample_id=safe_sample_id)
             vis.visualize_and_save(all_results, vis_count=min(args.vis_count, len(all_results)))
             print(f"Visualizations saved to {args.out_dir}")
         except ImportError:

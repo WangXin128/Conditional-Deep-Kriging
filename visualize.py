@@ -1,146 +1,118 @@
-# visualize.py
 import os
+from typing import List, Dict, Optional
+
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.ticker import FuncFormatter
-
-SAVE_DIR = "results_vis"
 
 
-# ===============================
-# Formatter helper
-# ===============================
-def create_custom_formatter_and_label(vmin, vmax, unit=""):
-    def formatter(x, pos):
-        return f"{x:.0f}"
-    label = unit
-    return FuncFormatter(formatter), label
+class Visualizer:
+    def __init__(
+        self,
+        save_dir: str = "results_vis",
+        sample_id: int = 34,
+        cmap: str = "jet",
+        levels: int = 20,
+        dpi: int = 300,
+    ):
+        self.save_dir = save_dir
+        self.sample_id = int(sample_id)
+        self.cmap = cmap
+        self.levels = int(levels)
+        self.dpi = int(dpi)
+        os.makedirs(self.save_dir, exist_ok=True)
 
+    @staticmethod
+    def _compute_vmin_vmax(gt: np.ndarray, pred: np.ndarray, vals: np.ndarray):
+        vmin = min(float(np.nanmin(gt)), float(np.nanmin(pred)), float(np.nanmin(vals)))
+        vmax = max(float(np.nanmax(gt)), float(np.nanmax(pred)), float(np.nanmax(vals)))
+        if (not np.isfinite(vmin)) or (not np.isfinite(vmax)) or abs(vmax - vmin) < 1e-12:
+            vmin, vmax = 0.0, 1.0
+        return vmin, vmax
 
-# ===============================
-# Main visualization
-# ===============================
-def visualize_and_save(all_results, vis_count=20):
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    colors_error = ["#2A9D8F", "#FFFAF0", "#E76F51"]
-    cmap_premium_error = LinearSegmentedColormap.from_list(
-        "custom_diverging", colors_error
-    )
-    cmap_main = 'jet'
-    grid_size = 128
-
-    print("📊 Generating Visualizations...")
-
-    for idx, res in enumerate(all_results):
-        if idx >= vis_count:
-            break
-
-        gt = res['gt'].reshape(grid_size, grid_size)
-        pred = res['pred'].reshape(grid_size, grid_size)
-
-        sample_x = res['coords'][:, 0]
-        sample_y = res['coords'][:, 1]
-        sample_val = res['input_vals']
-
-        residual = pred - gt
-        abs_error = np.abs(residual)
-
-        vmin, vmax = min(gt.min(), pred.min()), max(gt.max(), pred.max())
-        levels = np.linspace(vmin, vmax, 21)
-        fmt, lbl = create_custom_formatter_and_label(vmin, vmax, "nT")
-
-        X, Y = np.meshgrid(np.arange(grid_size), np.arange(grid_size))
-
-        fig = plt.figure(figsize=(20, 10))
-        gs = gridspec.GridSpec(2, 3, wspace=0.3, hspace=0.3)
-
-        # 1. Input
-        ax1 = plt.subplot(gs[0, 0])
-        sc = ax1.scatter(
-            sample_x, sample_y,
-            c=sample_val, cmap=cmap_main,
-            vmin=vmin, vmax=vmax,
-            s=25, edgecolors='k', linewidth=0.2
-        )
-        ax1.set_title(f"Input (n={len(sample_x)})")
-        ax1.set_xlim(0, 128)
-        ax1.set_ylim(128, 0)
-        ax1.set_aspect('equal')
-        plt.colorbar(sc, ax=ax1, format=fmt).ax.set_title(lbl)
-
-        # 2. GT
-        ax2 = plt.subplot(gs[0, 1])
-        cf2 = ax2.contourf(X, Y, gt, levels=levels, cmap=cmap_main)
-        ax2.contour(X, Y, gt, levels=levels, colors='k', linewidths=0.3, alpha=0.5)
-        ax2.set_title("Ground Truth")
-        ax2.set_xlim(0, 128)
-        ax2.set_ylim(128, 0)
-        ax2.set_aspect('equal')
-        plt.colorbar(cf2, ax=ax2, format=fmt).ax.set_title(lbl)
-
-        # 3. Pred
-        ax3 = plt.subplot(gs[0, 2])
-        cf3 = ax3.contourf(X, Y, pred, levels=levels, cmap=cmap_main)
-        ax3.contour(X, Y, pred, levels=levels, colors='k', linewidths=0.3, alpha=0.5)
-        ax3.set_title("PC-NIERT Pred")
-        ax3.set_xlim(0, 128)
-        ax3.set_ylim(128, 0)
-        ax3.set_aspect('equal')
-        plt.colorbar(cf3, ax=ax3, format=fmt).ax.set_title(lbl)
-
-        # 4. Error map
-        limit = max(abs(residual.min()), abs(residual.max()), 1e-9)
-        ax4 = plt.subplot(gs[1, 0])
-        im4 = ax4.imshow(
-            residual, cmap=cmap_premium_error,
-            vmin=-limit, vmax=limit,
-            extent=[0, 128, 128, 0]
-        )
-        ax4.set_title("Difference Map")
-        efmt, elbl = create_custom_formatter_and_label(-limit, limit, "nT")
-        plt.colorbar(im4, ax=ax4, format=efmt).ax.set_title(elbl)
-
-        # 5. Histogram
-        ax5 = plt.subplot(gs[1, 1:])
-        valid_err = abs_error.flatten()[np.isfinite(abs_error.flatten())]
-        if len(valid_err) > 0:
-            ax5.hist(
-                valid_err, bins=100, color='#E9967A', alpha=0.9,
-                range=(0, np.percentile(valid_err, 99.5) * 1.1)
-            )
-
-        ax5.set_title("Error Histogram")
-        ax5.text(
-            0.95, 0.95,
-            f"MAE: {res['mae']:.2f}\n"
-            f"RMSE: {res['rmse']:.2f}\n"
-            f"MAPE: {res['mape']:.2f}%\n"
-            f"Time: {res['time']:.4f}s",
-            transform=ax5.transAxes,
-            ha='right', va='top',
-            bbox=dict(facecolor='white', alpha=0.9)
-        )
-
-        plt.savefig(
-            os.path.join(SAVE_DIR, f"sample_{res['id']:03d}.png"),
-            dpi=150
-        )
-        plt.close()
-
-    # ===============================
-    # Save TXT
-    # ===============================
-    with open(os.path.join(SAVE_DIR, "metrics_report.txt"), "w") as f:
-        maes = [r['mae'] for r in all_results if np.isfinite(r['mae'])]
-        avg_mae = np.mean(maes) if maes else -1
-        f.write(f"Avg MAE: {avg_mae:.4f}\n")
+    def _find_target_result(self, all_results: List[Dict]) -> Optional[Dict]:
         for r in all_results:
-            f.write(
-                f"ID {r['id']:03d} | "
-                f"MAE {r['mae']:.4f} | "
-                f"RMSE {r['rmse']:.4f} | "
-                f"MAPE {r['mape']:.2f}% | "
-                f"Time {r['time']:.4f}s\n"
+            if int(r.get("id", -1)) == self.sample_id:
+                return r
+        return None
+
+    def _plot_one_row_three_cols(self, res: Dict, out_png: str):
+        gt = np.asarray(res["gt"], dtype=np.float32)
+        pred = np.asarray(res["pred"], dtype=np.float32)
+        coords = np.asarray(res["coords"], dtype=np.float32)
+        vals = np.asarray(res["input_vals"], dtype=np.float32)
+
+        if gt.ndim != 2 or pred.ndim != 2:
+            raise ValueError("res['gt'] and res['pred'] must be 2D arrays.")
+
+        grid_h, grid_w = gt.shape
+        X, Y = np.meshgrid(np.arange(grid_w), np.arange(grid_h))
+
+        vmin, vmax = self._compute_vmin_vmax(gt, pred, vals)
+        levels = np.linspace(vmin, vmax, self.levels)
+
+        fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
+        plt.subplots_adjust(wspace=0.06, right=0.92)
+
+        # 1) Ground Truth
+        ax = axes[0]
+        cf0 = ax.contourf(X, Y, gt, levels=levels, cmap=self.cmap, vmin=vmin, vmax=vmax)
+        ax.contour(X, Y, gt, levels=levels, colors="k", linewidths=0.3, alpha=0.5)
+        ax.set_title("Ground Truth")
+        ax.set_xlim(0, grid_w - 1)
+        ax.set_ylim(grid_h - 1, 0)
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+        # 2) Observations
+        ax = axes[1]
+        sc = ax.scatter(
+            coords[:, 0],
+            coords[:, 1],
+            c=vals,
+            s=14,
+            cmap=self.cmap,
+            vmin=vmin,
+            vmax=vmax,
+            linewidths=0,
+        )
+        ax.set_title(f"Observed Points (n={len(coords)})")
+        ax.set_xlim(0, grid_w - 1)
+        ax.set_ylim(grid_h - 1, 0)
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+        # 3) Prediction
+        ax = axes[2]
+        cf2 = ax.contourf(X, Y, pred, levels=levels, cmap=self.cmap, vmin=vmin, vmax=vmax)
+        ax.contour(X, Y, pred, levels=levels, colors="k", linewidths=0.3, alpha=0.5)
+        ax.set_title("Prediction")
+        ax.set_xlim(0, grid_w - 1)
+        ax.set_ylim(grid_h - 1, 0)
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+        # shared colorbar
+        cbar = fig.colorbar(cf2, ax=axes, fraction=0.025, pad=0.02)
+        cbar.ax.set_title("nT")
+
+        fig.savefig(out_png, dpi=self.dpi, bbox_inches="tight")
+        fig.savefig(out_png.replace(".png", ".pdf"), bbox_inches="tight", format="pdf")
+        plt.close(fig)
+
+    def visualize_and_save(self, all_results: List[Dict], vis_count: int = 20):
+        # vis_count 参数保留，只为兼容 train.py 的调用
+        if not all_results:
+            print("[Visualizer] all_results is empty, skip visualization.")
+            return
+
+        res = self._find_target_result(all_results)
+        if res is None:
+            print(
+                f"[Visualizer] sample id {self.sample_id} not found in all_results. "
+                f"Available id range: {[r.get('id', None) for r in all_results[:5]]} ..."
             )
+            return
+
+        out_png = os.path.join(self.save_dir, f"sample_{self.sample_id:03d}_gt_obs_pred.png")
+        self._plot_one_row_three_cols(res, out_png)
+        print(f"[Visualizer] Saved figure to {out_png}")
