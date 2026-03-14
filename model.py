@@ -51,9 +51,9 @@ def safe_cholesky_solve(K: torch.Tensor, y: torch.Tensor, base_jitter: float = 1
     raise RuntimeError(f"Cholesky failed after {max_tries} tries. Last error: {last_err}")
 
 
-class CD2_RBFKI(nn.Module):
+class CDK(nn.Module):
     """
-    Conditional Deep Ordinary Kriging (CDK-OK).
+    Conditional Deep Kriging .
 
     Theory:
     1. Z-score normalization (handled by dataset).
@@ -142,7 +142,7 @@ class CD2_RBFKI(nn.Module):
         c = self.rho(e.mean(dim=1))
         return c
 
-    def _kernel_rbf(self, X, Y, L, rho, p):
+    def _kernel_krig(self, X, Y, L, rho, p):
         Xt = torch.bmm(X, L.transpose(1, 2))
         Yt = torch.bmm(Y, L.transpose(1, 2))
         dist = torch.cdist(Xt, Yt)
@@ -179,13 +179,13 @@ class CD2_RBFKI(nn.Module):
 
         rho_, p_, eta_ = rho.view(B, 1, 1), p.view(B, 1, 1), eta.view(B, 1, 1)
 
-        # --- 3) Parametric Kernel (RBF) ---
-        # Diag(K_rbf) is always 1.0
+        # --- 3) Parametric Kernel (Krig) ---
+        # Diag(K_krig) is always 1.0
         coords64 = coords.double()
         L64 = L.double()
         rho64, p64 = rho_.double(), p_.double()
 
-        K_rbf_SS = self._kernel_rbf(coords64, coords64, L=L64, rho=rho64, p=p64)
+        K_krig_SS = self._kernel_krig(coords64, coords64, L=L64, rho=rho64, p=p64)
 
         # --- 4) Normalized Residual Kernel ---
         # K_res = <g, g>. To make Diag(K_res) == 1, we normalize features g.
@@ -206,10 +206,10 @@ class CD2_RBFKI(nn.Module):
             K_res_SS = 0.0
 
         # --- 5) Total Kernel (Convex Combination) ---
-        # K_total = eta * K_rbf + (1-eta) * K_res
+        # K_total = eta * K_krig + (1-eta) * K_res
         # Diag(K_total) = eta * 1 + (1-eta) * 1 = 1. Matches Z-score variance.
         eta64 = eta_.double()
-        K_SS = eta64 * K_rbf_SS + (1.0 - eta64) * K_res_SS
+        K_SS = eta64 * K_krig_SS + (1.0 - eta64) * K_res_SS
 
         # --- 6) Ordinary Kriging Solver (Differentiable) ---
         # Solve: (K + lambda I) * v_y = y
@@ -253,22 +253,22 @@ class CD2_RBFKI(nn.Module):
             pred_res = (1.0 - eta) * (gQ_norm * w_proj[:, None, :]).sum(dim=-1)
 
         # B. Parametric Part
-        pred_rbf = torch.zeros(B, M, device=device, dtype=torch.float32)
+        pred_krig = torch.zeros(B, M, device=device, dtype=torch.float32)
         chunk = max(1, self.chunk_q)
         q64_all = query_coords.double()
 
         for start in range(0, M, chunk):
             end = min(M, start + chunk)
             q_sub = q64_all[:, start:end, :]
-            # K_rbf(q, X)
-            k_rbf_sub = self._kernel_rbf(q_sub, coords64, L=L64, rho=rho64, p=p64).float()
+            # K_krig(q, X)
+            k_krig_sub = self._kernel_krig(q_sub, coords64, L=L64, rho=rho64, p=p64).float()
             # Weight by alpha and eta
-            # Term: eta * K_rbf * alpha
-            pred_rbf[:, start:end] = (eta * k_rbf_sub * alpha.float()[:, None, :]).sum(dim=-1)
+            # Term: eta * K_krig * alpha
+            pred_krig[:, start:end] = (eta * k_krig_sub * alpha.float()[:, None, :]).sum(dim=-1)
 
         # C. Combine + Mean Shift
-        # y_hat = (eta*K_rbf + (1-eta)K_res) * alpha + mu
-        pred = pred_rbf + pred_res + mu_gls.float()
+        # y_hat = (eta*K_krig + (1-eta)K_res) * alpha + mu
+        pred = pred_krig + pred_res + mu_gls.float()
 
         if return_aux:
             aux = {
